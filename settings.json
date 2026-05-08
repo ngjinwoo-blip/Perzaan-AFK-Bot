@@ -1,91 +1,113 @@
 {
-  "name": "AFK Bot",
+  "name": "VIPERDON",
+
   "bot-account": {
-    "username": "Hopeagentafk77",
+    "username": "Technoblade",
     "password": "",
     "type": "offline"
   },
+
   "server": {
     "ip": "HopeXSMP.aternos.me",
     "port": 43485,
-    "version": false,
+    "version": false
   },
+
   "position": {
-    "enabled": true,
+    "enabled": false,
     "x": 0,
     "y": 100,
     "z": 0
   },
+
   "utils": {
+
     "auto-auth": {
       "enabled": true,
-      "password": "VIA77"
+      "password": "Slobos"
     },
+
     "anti-afk": {
       "enabled": true,
-      "sneak": true
+      "sneak": false
     },
+
     "chat-messages": {
-      "enabled": true,
-      "repeat": true,
-      "repeat-delay": 500,
+      "enabled": false,
+      "repeat": false,
+      "repeat-delay": 30000,
+
       "messages": [
         "I'm a regular player",
-        "Subscribe to Perzaan Gaming!",
+        "Subscribe to Slobos!",
         "I like to play Minecraft!"
       ]
     },
+
     "chat-log": true,
+
     "auto-reconnect": true,
     "auto-reconnect-delay": 15000,
     "max-reconnect-delay": 60000,
+
     "periodic-rejoin": {
-      "enabled": true,
+      "enabled": false,
       "min-interval": 20,
       "max-interval": 60
     }
   },
+
   "movement": {
     "enabled": true,
+
     "circle-walk": {
-      "enabled": true,
+      "enabled": false,
       "radius": 4,
       "speed": 3000
     },
+
     "look-around": {
       "enabled": true,
-      "interval": 5000
+      "interval": 8000
     },
+
     "random-jump": {
       "enabled": true,
-      "interval": 10000
+      "interval": 15000
     }
   },
+
   "modules": {
-    "avoidMobs": true,
-    "combat": true,
-    "beds": true,
+    "avoidMobs": false,
+    "combat": false,
+    "beds": false,
     "chat": true,
     "console-commands": true
   },
+
   "combat": {
-    "attack-mobs": true,
+    "attack-mobs": false,
     "auto-eat": true
   },
+
   "beds": {
-    "pick-up-day": true,
-    "place-night": true
+    "pick-up-day": false,
+    "place-night": false
   },
+
   "discord": {
     "enabled": true,
+
     "webhookUrl": "https://discord.com/api/webhooks/1472567640521183243/7DzSIaCSM_9-5DjzrlAuP9Tdj7Y3yAP6BHg3scKzhaRFdVk8ctWBlhOc7I8l5xC6Nqm3",
+
     "events": {
       "connect": true,
       "disconnect": true,
       "chat": false
     }
   },
+
   "chat": {
-    "respond": true
+    "respond": false
   }
 }
