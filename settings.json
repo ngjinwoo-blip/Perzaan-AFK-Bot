@@ -6,8 +6,8 @@
     "type": "offline"
   },
   "server": {
-    "ip": "example.aternos.me",
-    "port": 92591,
+    "ip": "HopeXSMP.aternos.me",
+    "port": 43485,
     "version": "1.21.1"
   },
   "position": {
