@@ -377,7 +377,7 @@ function createBot() {
       checkTimeoutInterval: 120000 // 2 minutes - detects dead connections without false-positive disconnects
     });
 
-    bot.loadPlugin(pathfinder);
+    // bot.loadPlugin(pathfinder);
 
     // Connection timeout - if no spawn in 60s, reconnect
     const connectionTimeout = setTimeout(() => {
@@ -385,7 +385,7 @@ function createBot() {
         console.log('[Bot] Connection timeout - no spawn received');
         scheduleReconnect();
       }
-    }, 60000);
+    }, 180000);
 
     bot.once('spawn', () => {
       clearTimeout(connectionTimeout);
