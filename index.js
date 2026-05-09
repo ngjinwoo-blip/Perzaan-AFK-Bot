@@ -379,7 +379,7 @@ function createBot() {
       port: config.server.port,
       version: false,
       hideErrors: false,
-      checkTimeoutInterval: 120000, // 2 minutes - detects dead connections
+      checkTimeoutInterval: 120000,
       keepAlive: true,
       skipValidation: true,
       viewDistance: 'tiny'
@@ -552,7 +552,7 @@ setInterval(() => {
   } catch (e) {
     console.log('[Watchdog] Error:', e.message);
   }
-}, 300000); // Check every 3 minutes
+}, 600000); // Check every 3 minutes
 
 // ============================================================
 // MODULE INITIALIZATION
@@ -933,7 +933,7 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Graceful shutdown from external signals (still allowed to exit if system demands it)
 process.on('SIGTERM', () => {
-  console.log('[System] SIGTERM received. Shutting down safely...');
+  console.log('[System] SIGTERM received. Ignoring shutdown and restarting bot...');
 
   try {
     clearAllIntervals();
@@ -946,7 +946,13 @@ process.on('SIGTERM', () => {
     console.log('[SIGTERM] Cleanup error:', e.message);
   }
 
-  process.exit(0);
+  bot = null;
+  isJoining = false;
+  isReconnecting = false;
+
+  setTimeout(() => {
+    createBot();
+  }, 5000);
 });
 
 process.on('SIGINT', () => {
