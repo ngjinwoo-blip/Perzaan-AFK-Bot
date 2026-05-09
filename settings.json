@@ -10,7 +10,7 @@
   "server": {
     "ip": "HopeXSMP.aternos.me",
     "port": 43485,
-    "version": false
+    "version": "1.21"
   },
 
   "position": {
