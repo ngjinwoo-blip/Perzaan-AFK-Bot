@@ -380,7 +380,7 @@ function createBot() {
       version: config.server.version,
       hideErrors: false,
       checkTimeoutInterval: 120000, // 2 minutes - detects dead connections
-      keepAlive: true
+      keepAlive: true,
       skipValidation: true,
       viewDistance: 'tiny'
     });
