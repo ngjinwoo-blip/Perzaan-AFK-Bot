@@ -2,7 +2,7 @@ function randomMs(minMs, maxMs) {
     return Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs
 }
 
-function setupLeaveRejoin(bot, createBot) {
+function // setupLeaveRejoin(bot, createBot) {
     // Timers
     let jumpTimer = null
     let jumpOffTimer = null
