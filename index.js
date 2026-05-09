@@ -1,5 +1,5 @@
 const mineflayer = require('mineflayer');
-const { Movements, pathfinder, goals } = require('mineflayer-pathfinder');
+const { Movements, goals } = require('mineflayer-pathfinder');
 const { GoalBlock } = goals;
 const config = require('./settings.json');
 const express = require('express');
@@ -283,7 +283,7 @@ function formatUptime(seconds) {
 // ============================================================
 // SELF-PING - Prevent Render from sleeping
 // ============================================================
-const SELF_PING_INTERVAL = 10 * 60 * 1000; // 10 minutes
+const SELF_PING_INTERVAL = 5 * 60 * 1000;
 
 const https = require('https');
 
@@ -298,7 +298,7 @@ function startSelfPing() {
       console.log(`[KeepAlive] Self-ping failed: ${err.message}`);
     });
   }, SELF_PING_INTERVAL);
-  console.log('[KeepAlive] Self-ping system started (every 10 min)');
+  console.log('[KeepAlive] Self-ping system started (every 5 min)');
 }
 
 startSelfPing();
@@ -374,8 +374,13 @@ function createBot() {
       port: config.server.port,
       version: config.server.version,
       hideErrors: false,
-      checkTimeoutInterval: 120000 // 2 minutes - detects dead connections without false-positive disconnects
+      checkTimeoutInterval: 300000 // 5 minutes - detects dead connections without false-positive disconnects
     });
+
+    if (bot._client && bot._client.socket) {
+      bot._client.socket.setKeepAlive(true, 30000);
+      bot._client.socket.setTimeout(0);
+    }
 
     // bot.loadPlugin(pathfinder);
 
@@ -385,7 +390,7 @@ function createBot() {
         console.log('[Bot] Connection timeout - no spawn received');
         scheduleReconnect();
       }
-    }, 180000);
+    }, 300000);
 
     bot.once('spawn', () => {
       clearTimeout(connectionTimeout);
@@ -393,6 +398,10 @@ function createBot() {
       botState.lastActivity = Date.now();
       botState.reconnectAttempts = 0;
       isReconnecting = false;
+
+      bot._client.on('keep_alive', () => {
+        botState.lastActivity = Date.now();
+      });
 
       console.log(`[Bot] [+] Successfully spawned on server!`);
       if (config.discord && config.discord.events.connect) {
@@ -417,33 +426,12 @@ function createBot() {
           bot.chat('/gamerule sendCommandFeedback false');
         }
       }, 3000);
-
-      // Attempt creative mode (only works if bot has OP)
-      setTimeout(() => {
-        if (bot && botState.connected) {
-          bot.chat('/gamemode creative');
-          console.log('[INFO] Attempted to set creative mode (requires OP)');
-        }
-      }, 3000);
-
-      bot.on('messagestr', (message) => {
-        if (
-          message.includes('commands.gamemode.success.self') ||
-          message.includes('Set own game mode to Creative Mode')
-        ) {
-          console.log('[INFO] Bot is now in Creative Mode.');
-           
-          bot.chat('/gamerule sendCommandFeedback false');
-          
-        }
-      });
     });
 
     
 
     // Handle disconnection
     bot.on('end', (reason) => {
-      const wasSpawned = botState.connected;
       console.log(`[Bot] Disconnected: ${reason || 'Unknown reason'}`);
       botState.connected = false;
       clearAllIntervals();
@@ -458,9 +446,11 @@ function createBot() {
     });
 
     bot.on('kicked', (reason) => {
-      const wasSpawned = botState.connected;
       console.log(`[Bot] Kicked: ${reason}`);
       botState.connected = false;
+      if (botState.errors.length > 20) {
+        botState.errors.shift();
+      }
       botState.errors.push({ type: 'kicked', reason, time: Date.now() });
       clearAllIntervals();
 
@@ -475,6 +465,9 @@ function createBot() {
 
     bot.on('error', (err) => {
       console.log(`[Bot] Error: ${err.message}`);
+      if (botState.errors.length > 20) {
+        botState.errors.shift();
+      }
       botState.errors.push({ type: 'error', message: err.message, time: Date.now() });
       // Don't immediately reconnect on error - let 'end' event handle it
     });
@@ -505,6 +498,46 @@ function scheduleReconnect() {
     createBot();
   }, delay);
 }
+
+// ============================================================
+// WATCHDOG SYSTEM
+// ============================================================
+setInterval(() => {
+  try {
+    if (
+      !bot ||
+      !bot._client ||
+      bot._client.ended ||
+      !bot.entity
+    ) {
+      console.log('[Watchdog] Dead bot detected, reconnecting...');
+
+      try {
+        if (bot) {
+          bot.removeAllListeners();
+          bot.end();
+        }
+      } catch (e) {}
+
+      bot = null;
+      isReconnecting = false;
+
+      scheduleReconnect();
+    }
+  } catch (e) {
+    console.log('[Watchdog] Error:', e.message);
+  }
+}, 30000);
+
+// ============================================================
+// STUCK RECONNECT FLAG RESET
+// ============================================================
+setInterval(() => {
+  if (isReconnecting) {
+    console.log('[Watchdog] Resetting stuck reconnect flag');
+    isReconnecting = false;
+  }
+}, 60000);
 
 // ============================================================
 // MODULE INITIALIZATION
@@ -542,7 +575,7 @@ function initializeModules(bot, mcData, defaultMove) {
   }
 
   // ---------- MOVE TO POSITION ----------
-  if (config.position.enabled) {
+  if (config.position.enabled && bot.pathfinder) {
     bot.pathfinder.setMovements(defaultMove);
     bot.pathfinder.setGoal(new GoalBlock(config.position.x, config.position.y, config.position.z));
   }
@@ -557,7 +590,7 @@ function initializeModules(bot, mcData, defaultMove) {
         }, 100);
         botState.lastActivity = Date.now();
       }
-    }, 3000); // Jump every 30 seconds
+    }, 30000); // Jump every 30 seconds
 
     if (config.utils['anti-afk'].sneak) {
       bot.setControlState('sneak', true);
@@ -856,6 +889,9 @@ function sendDiscordWebhook(content, color = 0x0099ff) {
 process.on('uncaughtException', (err) => {
   console.log(`[FATAL] Uncaught Exception: ${err.message}`);
   // console.log(err.stack); // Optional: keep logs cleaner
+  if (botState.errors.length > 20) {
+    botState.errors.shift();
+  }
   botState.errors.push({ type: 'uncaught', message: err.message, time: Date.now() });
 
   // CRITICAL: DO NOT EXIT.
@@ -872,17 +908,28 @@ process.on('uncaughtException', (err) => {
 
 process.on('unhandledRejection', (reason, promise) => {
   console.log(`[FATAL] Unhandled Rejection: ${reason}`);
+  if (botState.errors.length > 20) {
+    botState.errors.shift();
+  }
   botState.errors.push({ type: 'rejection', message: String(reason), time: Date.now() });
   // Do not exit.
 });
 
 // Graceful shutdown from external signals (still allowed to exit if system demands it)
 process.on('SIGTERM', () => {
-  console.log('[System] SIGTERM received. Ignoring to stay alive? (Render might force kill)');
-  // If we mistakenly exit here, the web server dies. 
-  // User asked for "all the time on no matter what".
-  // Note: Render will SIGKILL if we don't exit, but this keeps us up as long as possible.
-  process.exit(0);
+  console.log('[System] SIGTERM received. Restarting bot safely...');
+
+  try {
+    if (bot) {
+      bot.end();
+    }
+  } catch (e) {
+    console.log('[SIGTERM] Cleanup error:', e.message);
+  }
+
+  setTimeout(() => {
+    createBot();
+  }, 5000);
 });
 
 process.on('SIGINT', () => {
