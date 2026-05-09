@@ -2,7 +2,7 @@
   "name": "VIPERDON",
 
   "bot-account": {
-    "username": "Technoblade",
+    "username": "UPTimerXVip",
     "password": "",
     "type": "offline"
   },
@@ -10,7 +10,7 @@
   "server": {
     "ip": "HopeXSMP.aternos.me",
     "port": 43485,
-    "version": "1.21"
+    "version": "1.21.11"
   },
 
   "position": {
