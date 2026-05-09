@@ -381,6 +381,8 @@ function createBot() {
       hideErrors: false,
       checkTimeoutInterval: 120000, // 2 minutes - detects dead connections
       keepAlive: true
+      skipValidation: true,
+      viewDistance: 'tiny'
     });
 
     if (bot._client && bot._client.socket) {
@@ -431,7 +433,7 @@ function createBot() {
       initializeModules(bot, mcData, defaultMove);
 
       // Setup enhanced Leave/Rejoin logic
-      setupLeaveRejoin(bot, createBot);
+      // setupLeaveRejoin(bot, createBot);
 
       setTimeout(() => {
         if (bot && botState.connected) {
@@ -636,7 +638,7 @@ function initializeModules(bot, mcData, defaultMove) {
 }
 
 // Periodic Rejoin Module
-const setupLeaveRejoin = require('./leaveRejoin');
+// const setupLeaveRejoin = require('./leaveRejoin');
 
 // Periodic Rejoin Module - Handled by leaveRejoin.js now
 function periodicRejoin(bot) {
