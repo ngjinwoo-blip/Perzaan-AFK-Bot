@@ -319,6 +319,7 @@ let bot = null;
 let activeIntervals = [];
 let reconnectTimeout = null;
 let isReconnecting = false;
+let isJoining = false; // Track if bot is currently joining/loading
 
 function clearAllIntervals() {
   console.log(`[Cleanup] Clearing ${activeIntervals.length} intervals`);
@@ -365,6 +366,9 @@ function createBot() {
   console.log(`[Bot] Creating bot instance...`);
   console.log(`[Bot] Connecting to ${config.server.ip}:${config.server.port}`);
 
+  // Mark that we are joining
+  isJoining = true;
+
   try {
     bot = mineflayer.createBot({
       username: config['bot-account'].username,
@@ -374,7 +378,7 @@ function createBot() {
       port: config.server.port,
       version: config.server.version,
       hideErrors: false,
-      checkTimeoutInterval: 300000 // 5 minutes - detects dead connections without false-positive disconnects
+      checkTimeoutInterval: 90000 // 5 minutes - detects dead connections without false-positive disconnects
     });
 
     if (bot._client && bot._client.socket) {
@@ -388,6 +392,7 @@ function createBot() {
     const connectionTimeout = setTimeout(() => {
       if (!botState.connected) {
         console.log('[Bot] Connection timeout - no spawn received');
+        isJoining = false;
         scheduleReconnect();
       }
     }, 300000);
@@ -398,6 +403,7 @@ function createBot() {
       botState.lastActivity = Date.now();
       botState.reconnectAttempts = 0;
       isReconnecting = false;
+      isJoining = false; // Joining complete
 
       bot._client.on('keep_alive', () => {
         botState.lastActivity = Date.now();
@@ -434,6 +440,7 @@ function createBot() {
     bot.on('end', (reason) => {
       console.log(`[Bot] Disconnected: ${reason || 'Unknown reason'}`);
       botState.connected = false;
+      isJoining = false;
       clearAllIntervals();
 
       if (config.discord && config.discord.events.disconnect && reason !== 'Periodic Rejoin') {
@@ -448,6 +455,7 @@ function createBot() {
     bot.on('kicked', (reason) => {
       console.log(`[Bot] Kicked: ${reason}`);
       botState.connected = false;
+      isJoining = false;
       if (botState.errors.length > 20) {
         botState.errors.shift();
       }
@@ -474,6 +482,7 @@ function createBot() {
 
   } catch (err) {
     console.log(`[Bot] Failed to create bot: ${err.message}`);
+    isJoining = false;
     scheduleReconnect();
   }
 }
@@ -504,6 +513,11 @@ function scheduleReconnect() {
 // ============================================================
 setInterval(() => {
   try {
+    // Only check for dead bot if we are not currently joining/loading
+    if (isJoining) {
+      return; // Skip watchdog while joining
+    }
+
     if (
       !bot ||
       !bot._client ||
@@ -521,6 +535,7 @@ setInterval(() => {
 
       bot = null;
       isReconnecting = false;
+      isJoining = false;
 
       scheduleReconnect();
     }
