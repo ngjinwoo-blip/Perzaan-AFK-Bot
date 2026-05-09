@@ -87,7 +87,7 @@
 
   "combat": {
     "attack-mobs": false,
-    "auto-eat": true
+    "auto-eat": false
   },
 
   "beds": {
