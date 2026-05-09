@@ -20,6 +20,9 @@ let botState = {
   errors: []
 };
 
+// Track if bot is currently in the process of joining/loading
+let isJoining = false;
+
 // Health check endpoint for monitoring
 // Health check endpoint for monitoring
 app.get('/', (req, res) => {
@@ -310,7 +313,7 @@ setInterval(() => {
   const mem = process.memoryUsage();
   const heapMB = (mem.heapUsed / 1024 / 1024).toFixed(2);
   console.log(`[Memory] Heap: ${heapMB} MB`);
-}, 5 * 60 * 1000); // Every 5 minutes
+}, 10 * 60 * 1000); // Every 10 minutes
 
 // ============================================================
 // BOT CREATION WITH RECONNECTION LOGIC
@@ -319,7 +322,6 @@ let bot = null;
 let activeIntervals = [];
 let reconnectTimeout = null;
 let isReconnecting = false;
-let isJoining = false; // Track if bot is currently joining/loading
 
 function clearAllIntervals() {
   console.log(`[Cleanup] Clearing ${activeIntervals.length} intervals`);
@@ -334,20 +336,19 @@ function addInterval(callback, delay) {
 }
 
 function getReconnectDelay() {
-  // Aggressive reconnection: fast, flat delay or very subtle backoff
-  const baseDelay = config.utils['auto-reconnect-delay'] || 2000;
-  const maxDelay = config.utils['max-reconnect-delay'] || 15000;
+  // Adaptive reconnection: gentle backoff with reasonable caps
+  const baseDelay = config.utils['auto-reconnect-delay'] || 5000;
+  const maxDelay = config.utils['max-reconnect-delay'] || 60000;
 
-  // Use a much gentler backoff or just a flat delay if user wants "lower"
-  // Current logic: attempts * 1000 + base, capped at max
-  const delay = Math.min(baseDelay + (botState.reconnectAttempts * 1000), maxDelay);
+  // Use exponential backoff with cap
+  const delay = Math.min(baseDelay * Math.pow(1.5, botState.reconnectAttempts), maxDelay);
 
-  return delay;
+  return Math.floor(delay);
 }
 
 function createBot() {
   if (isReconnecting) {
-    console.log('[Bot] Already reconnecting, skipping...');
+    console.log('[Bot] Already reconnecting, skipping createBot...');
     return;
   }
 
@@ -366,7 +367,7 @@ function createBot() {
   console.log(`[Bot] Creating bot instance...`);
   console.log(`[Bot] Connecting to ${config.server.ip}:${config.server.port}`);
 
-  // Mark that we are joining
+  // Mark that we are joining/loading
   isJoining = true;
 
   try {
@@ -378,26 +379,29 @@ function createBot() {
       port: config.server.port,
       version: config.server.version,
       hideErrors: false,
-      checkTimeoutInterval: 90000 // 5 minutes - detects dead connections without false-positive disconnects
+      checkTimeoutInterval: 120000, // 2 minutes - detects dead connections
+      keepAlive: true
     });
 
     if (bot._client && bot._client.socket) {
-      bot._client.socket.setKeepAlive(true, 30000);
+      bot._client.socket.setKeepAlive(true, 60000);
       bot._client.socket.setTimeout(0);
     }
 
     // bot.loadPlugin(pathfinder);
 
-    // Connection timeout - if no spawn in 60s, reconnect
+    // Connection timeout - if no spawn in 2 minutes, reconnect
     const connectionTimeout = setTimeout(() => {
       if (!botState.connected) {
         console.log('[Bot] Connection timeout - no spawn received');
         isJoining = false;
         scheduleReconnect();
       }
-    }, 300000);
+    }, 120000);
 
     bot.once('spawn', () => {
+      clearAllIntervals();
+
       clearTimeout(connectionTimeout);
       botState.connected = true;
       botState.lastActivity = Date.now();
@@ -405,9 +409,11 @@ function createBot() {
       isReconnecting = false;
       isJoining = false; // Joining complete
 
-      bot._client.on('keep_alive', () => {
-        botState.lastActivity = Date.now();
-      });
+      if (bot && bot._client) {
+        bot._client.on('keep_alive', () => {
+          botState.lastActivity = Date.now();
+        });
+      }
 
       console.log(`[Bot] [+] Successfully spawned on server!`);
       if (config.discord && config.discord.events.connect) {
@@ -477,7 +483,8 @@ function createBot() {
         botState.errors.shift();
       }
       botState.errors.push({ type: 'error', message: err.message, time: Date.now() });
-      // Don't immediately reconnect on error - let 'end' event handle it
+      // Do NOT reconnect from here - let 'end' event handle it
+      // This prevents duplicate reconnects from both 'error' and 'end'
     });
 
   } catch (err) {
@@ -493,6 +500,7 @@ function scheduleReconnect() {
   }
 
   if (isReconnecting) {
+    console.log('[Bot] Reconnect already scheduled, skipping...');
     return;
   }
 
@@ -500,7 +508,7 @@ function scheduleReconnect() {
   botState.reconnectAttempts++;
 
   const delay = getReconnectDelay();
-  console.log(`[Bot] Reconnecting in ${delay / 1000}s (attempt #${botState.reconnectAttempts})`);
+  console.log(`[Bot] Reconnecting in ${(delay / 1000).toFixed(1)}s (attempt #${botState.reconnectAttempts})`);
 
   reconnectTimeout = setTimeout(() => {
     isReconnecting = false;
@@ -513,16 +521,16 @@ function scheduleReconnect() {
 // ============================================================
 setInterval(() => {
   try {
-    // Only check for dead bot if we are not currently joining/loading
+    // Skip watchdog if bot is currently joining/loading
     if (isJoining) {
-      return; // Skip watchdog while joining
+      return;
     }
 
+    // Check if bot is dead (missing client, ended, or null)
     if (
       !bot ||
       !bot._client ||
-      bot._client.ended ||
-      !bot.entity
+      bot._client.ended
     ) {
       console.log('[Watchdog] Dead bot detected, reconnecting...');
 
@@ -542,17 +550,7 @@ setInterval(() => {
   } catch (e) {
     console.log('[Watchdog] Error:', e.message);
   }
-}, 30000);
-
-// ============================================================
-// STUCK RECONNECT FLAG RESET
-// ============================================================
-setInterval(() => {
-  if (isReconnecting) {
-    console.log('[Watchdog] Resetting stuck reconnect flag');
-    isReconnecting = false;
-  }
-}, 60000);
+}, 300000); // Check every 3 minutes
 
 // ============================================================
 // MODULE INITIALIZATION
@@ -605,7 +603,7 @@ function initializeModules(bot, mcData, defaultMove) {
         }, 100);
         botState.lastActivity = Date.now();
       }
-    }, 30000); // Jump every 30 seconds
+    }, 60000); // Jump every 60 seconds (was 30s, more lightweight)
 
     if (config.utils['anti-afk'].sneak) {
       bot.setControlState('sneak', true);
@@ -659,7 +657,7 @@ function startCircleWalk(bot, defaultMove) {
 
     // Rate limit pathfinding
     const now = Date.now();
-    if (now - lastPathTime < 2000) return;
+    if (now - lastPathTime < 5000) return; // 5 second cooldown (was 2s, lighter)
     lastPathTime = now;
 
     try {
@@ -914,10 +912,11 @@ process.on('uncaughtException', (err) => {
   // We just clear intervals and try to restart the bot logic.
   if (config.utils['auto-reconnect']) {
     clearAllIntervals();
+    isJoining = false;
     // Wrap in a tiny timeout to prevent tight loops if the error is synchronous
     setTimeout(() => {
       scheduleReconnect();
-    }, 1000);
+    }, 2000);
   }
 });
 
@@ -932,19 +931,20 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Graceful shutdown from external signals (still allowed to exit if system demands it)
 process.on('SIGTERM', () => {
-  console.log('[System] SIGTERM received. Restarting bot safely...');
+  console.log('[System] SIGTERM received. Shutting down safely...');
 
   try {
+    clearAllIntervals();
+
     if (bot) {
+      bot.removeAllListeners();
       bot.end();
     }
   } catch (e) {
     console.log('[SIGTERM] Cleanup error:', e.message);
   }
 
-  setTimeout(() => {
-    createBot();
-  }, 5000);
+  process.exit(0);
 });
 
 process.on('SIGINT', () => {
@@ -957,7 +957,7 @@ process.on('SIGINT', () => {
 // START THE BOT
 // ============================================================
 console.log('='.repeat(50));
-console.log('  Minecraft AFK Bot v2.3 - Bug Fix Edition');
+console.log('  Minecraft AFK Bot v2.4 - Stable Edition');
 console.log('='.repeat(50));
 console.log(`Server: ${config.server.ip}:${config.server.port}`);
 console.log(`Version: ${config.server.version}`);
