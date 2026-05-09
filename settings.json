@@ -73,7 +73,7 @@
 
     "random-jump": {
       "enabled": true,
-      "interval": 15000
+      "interval": 30000
     }
   },
 
