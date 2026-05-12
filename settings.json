@@ -1,5 +1,5 @@
 {
-  "name": "VIPERDON",
+  "name": "UPTIMER",
 
   "bot-account": {
     "username": "UPTimerXVip",
@@ -8,8 +8,8 @@
   },
 
   "server": {
-    "ip": "QuitXSMP.aternos.me",
-    "port": 44743,
+    "ip": "HopeXSMP.aternos.me",
+    "port": 43485,
     "version": "1.21.1"
   },
 
