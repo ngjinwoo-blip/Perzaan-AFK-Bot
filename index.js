@@ -307,11 +307,31 @@ setInterval(() => {
   const used = process.memoryUsage().heapUsed / 1024 / 1024;
   console.log(`[Memory] ${used.toFixed(2)} MB`);
 
-  if (used > 400) {
-    console.log('[Memory] High memory usage detected (>400MB)');
-  }
+if (used > 420) {
+  console.log('[Memory] Critical memory usage — restarting');
+
+  process.exit(1);
+}
 }, 600000);
 
+// ============================================================
+// AUTO GARBAGE COLLECTION
+// ============================================================
+setInterval(() => {
+  if (global.gc) {
+    const before = process.memoryUsage().heapUsed / 1024 / 1024;
+
+    global.gc();
+
+    const after = process.memoryUsage().heapUsed / 1024 / 1024;
+
+    console.log(
+      `[GC] Garbage collected | ${before.toFixed(2)}MB -> ${after.toFixed(2)}MB`
+    );
+  } else {
+    console.log('[GC] Garbage collector unavailable');
+  }
+}, 1000 * 60 * 15); // every 15 min
 // ============================================================
 // HEARTBEAT LOGGER - Keeps Render stream alive for debugging
 // ============================================================
