@@ -658,7 +658,7 @@ function scheduleReconnect() {
 // ============================================================
 // PERIODIC CLEAN REFRESH - Prevents stale sockets & ghost states
 // ============================================================
-const RESTART_INTERVAL = 1000 * 60 * 60 * 8;
+const RESTART_INTERVAL = 1000 * 60 * 60 * 4;
 
 setInterval(() => {
   if (bot && botState.connected && !isReconnecting) {
@@ -667,7 +667,7 @@ setInterval(() => {
   }
 }, RESTART_INTERVAL);
 
-console.log('[Refresh] Scheduled refresh enabled (every 8 hours)');
+console.log('[Refresh] Scheduled refresh enabled (every 3 hours)');
 
 // ============================================================
 // GHOST CONNECTION DETECTOR
@@ -772,7 +772,7 @@ function startWatchdog() {
 
 // ============================================================
 // CENTRAL ACTIVITY MANAGER — ULTRA LIGHTWEIGHT (v5.3)
-// Single anti-AFK engine. 85% idle. 40-120s delays.
+// Single anti-AFK engine. 60% idle. 40-120s delays.
 // ============================================================
 class ActivityManager {
   constructor() {
@@ -782,8 +782,8 @@ class ActivityManager {
   scheduleNext() {
     if (!bot || !botState.connected) return;
     
-    // 85% chance: complete idle (maximum stability)
-    if (Math.random() < 0.85) {
+    // 60% chance: complete idle (maximum stability)
+    if (Math.random() < 0.60) {
       const idleDelay = 40000 + Math.floor(Math.random() * 80000);
       timeoutRegistry.setTimeout(() => this.scheduleNext(), idleDelay);
       return;
@@ -810,6 +810,10 @@ class ActivityManager {
       // 2%: jump
       this.performJump();
       actionDelay = 60000 + Math.floor(Math.random() * 60000);
+    } else if (rand < 0.30) {
+      // Spectator realistic movement
+      this.performSpectatorMove();
+      actionDelay = 45000 + Math.floor(Math.random() * 45000);
     } else {
       // Fallback idle
       actionDelay = 40000 + Math.floor(Math.random() * 80000);
@@ -855,6 +859,59 @@ class ActivityManager {
         this.isActive = false;
       }, 200);
       botState.lastActivity = Date.now();
+    } catch (e) {
+      this.isActive = false;
+    }
+  }
+
+  performSpectatorMove() {
+    if (!bot || !bot.entity) return;
+    
+    this.isActive = true;
+    
+    try {
+      // Random camera movement (refined for subtlety)
+      const yawChange = (Math.random() - 0.5) * 0.7;
+      const pitchChange = (Math.random() - 0.5) * 0.2;
+      
+      bot.look(
+        bot.entity.yaw + yawChange,
+        bot.entity.pitch + pitchChange,
+        true
+      );
+      
+      // Random movement direction
+      const directions = ['forward', 'back', 'left', 'right'];
+      const dir = directions[Math.floor(Math.random() * directions.length)];
+      
+      bot.setControlState(dir, true);
+      
+      if (Math.random() < 0.10) {
+        bot.setControlState('jump', true);
+        
+        timeoutRegistry.setTimeout(() => {
+          if (bot) bot.setControlState('jump', false);
+        }, 150);
+      }
+      
+      // Sometimes sprint for realism
+      if (Math.random() < 0.30) {
+        bot.setControlState('sprint', true);
+      }
+      
+      timeoutRegistry.setTimeout(() => {
+        if (!bot || !bot.entity) return;
+        
+        bot.setControlState(dir, false);
+        bot.setControlState('sprint', false);
+        
+        bot.clearControlStates();
+        
+        this.isActive = false;
+      }, 800 + Math.floor(Math.random() * 1200));
+      
+      botState.lastActivity = Date.now();
+      
     } catch (e) {
       this.isActive = false;
     }
@@ -1048,7 +1105,7 @@ console.log('='.repeat(50));
 console.log(`Server: ${config.server.ip}:${config.server.port}`);
 console.log(`Version: ${config.server.version}`);
 console.log(`Auto-Reconnect: ${config.utils['auto-reconnect'] ? 'Enabled' : 'Disabled'}`);
-console.log('Features: Ghost Detection | Single Activity Engine | Position Safety | 8h Refresh');
+console.log('Features: Ghost Detection | Single Activity Engine | Position Safety | 3h Refresh');
 console.log('='.repeat(50));
 
 createBot();
