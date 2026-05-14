@@ -304,26 +304,27 @@ startSelfPing();
 // MEMORY MONITORING
 // ============================================================
 setInterval(() => {
-  const used = process.memoryUsage().heapUsed / 1024 / 1024;
-  console.log(`[Memory] ${used.toFixed(2)} MB`);
+  const used = process.memoryUsage().rss / 1024 / 1024;
 
-if (used > 420) {
-  console.log('[Memory] Critical memory usage — restarting');
+  console.log(`[Memory] REAL usage: ${used.toFixed(2)} MB`);
 
-  process.exit(1);
-}
-}, 600000);
+  if (used > 380) {
+    console.log('[Memory] Critical memory usage — restarting');
+
+    process.exit(1);
+  }
+}, 300000);
 
 // ============================================================
 // AUTO GARBAGE COLLECTION
 // ============================================================
 setInterval(() => {
   if (global.gc) {
-    const before = process.memoryUsage().heapUsed / 1024 / 1024;
+    const before = process.memoryUsage().rss / 1024 / 1024;
 
     global.gc();
 
-    const after = process.memoryUsage().heapUsed / 1024 / 1024;
+    const after = process.memoryUsage().rss / 1024 / 1024;
 
     console.log(
       `[GC] Garbage collected | ${before.toFixed(2)}MB -> ${after.toFixed(2)}MB`
@@ -331,7 +332,7 @@ setInterval(() => {
   } else {
     console.log('[GC] Garbage collector unavailable');
   }
-}, 1000 * 60 * 15); // every 15 min
+}, 1000 * 60 * 10); // every 10 min
 // ============================================================
 // HEARTBEAT LOGGER - Keeps Render stream alive for debugging
 // ============================================================
@@ -478,6 +479,7 @@ function createBot() {
       checkTimeoutInterval: 120000,
       keepAlive: true,
       skipValidation: true,
+      viewDistance: 'tiny',
     });
 
     bot.once('login', () => {
