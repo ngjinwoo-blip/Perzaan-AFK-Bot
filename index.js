@@ -308,7 +308,7 @@ setInterval(() => {
 
   console.log(`[Memory] REAL usage: ${used.toFixed(2)} MB`);
 
-  if (used > 380) {
+  if (used > 430) {
     console.log('[Memory] Critical memory usage — restarting');
 
     process.exit(1);
