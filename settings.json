@@ -2,7 +2,7 @@
   "name": "UPTIMER",
 
   "bot-account": {
-    "username": "HopeSmpPlayer",
+    "username": "HopeXSmp",
     "password": "",
     "type": "offline"
   },
@@ -10,7 +10,7 @@
   "server": {
     "ip": "HopeXSMP.aternos.me",
     "port": 43485,
-    "version": "1.21.1"
+    "version": "1.21.9"
   },
 
   "position": {
