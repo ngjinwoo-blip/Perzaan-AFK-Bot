@@ -658,7 +658,7 @@ function scheduleReconnect() {
 // ============================================================
 // PERIODIC CLEAN REFRESH - Prevents stale sockets & ghost states
 // ============================================================
-const RESTART_INTERVAL = 1000 * 60 * 60 * 4;
+const RESTART_INTERVAL = 1000 * 60 * 60 * 3;
 
 setInterval(() => {
   if (bot && botState.connected && !isReconnecting) {
@@ -783,7 +783,7 @@ class ActivityManager {
     if (!bot || !botState.connected) return;
     
     // 60% chance: complete idle (maximum stability)
-    if (Math.random() < 0.60) {
+    if (Math.random() < 0.50) {
       const idleDelay = 40000 + Math.floor(Math.random() * 80000);
       timeoutRegistry.setTimeout(() => this.scheduleNext(), idleDelay);
       return;
@@ -798,19 +798,19 @@ class ActivityManager {
     const rand = Math.random();
     let actionDelay;
     
-    if (rand < 0.10) {
-      // 10%: tiny look movement
+    if (rand < 0.15) {
+      // 15%: tiny look movement
       this.performLook();
       actionDelay = 40000 + Math.floor(Math.random() * 80000);
-    } else if (rand < 0.13) {
-      // 3%: arm swing
+    } else if (rand < 0.22) {
+      // 7%: arm swing
       this.performArmSwing();
       actionDelay = 50000 + Math.floor(Math.random() * 70000);
-    } else if (rand < 0.15) {
-      // 2%: jump
+    } else if (rand < 0.27) {
+      // 5%: jump
       this.performJump();
       actionDelay = 60000 + Math.floor(Math.random() * 60000);
-    } else if (rand < 0.30) {
+    } else if (rand < 0.50) {
       // Spectator realistic movement
       this.performSpectatorMove();
       actionDelay = 45000 + Math.floor(Math.random() * 45000);
