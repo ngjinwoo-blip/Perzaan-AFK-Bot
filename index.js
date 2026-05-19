@@ -4,6 +4,39 @@ const express = require('express');
 const http = require('http');
 
 // ============================================================
+// GLOBAL RECONNECT LOCK - Prevents duplicate connections
+// ============================================================
+let reconnecting = false;
+
+// ============================================================
+// DEDICATED PACKET LISTENER REFERENCE
+// ============================================================
+let packetListener = null;
+
+// ============================================================
+// ACTIVITY LOOP GUARD
+// ============================================================
+let activityLoopRunning = false;
+
+// ============================================================
+// GLOBAL INTERVAL TRACKING - Prevents interval leaks
+// ============================================================
+const globalIntervals = new Set();
+
+function safeGlobalInterval(fn, delay) {
+  const interval = setInterval(fn, delay);
+  globalIntervals.add(interval);
+  return interval;
+}
+
+function clearGlobalIntervals() {
+  for (const i of globalIntervals) {
+    clearInterval(i);
+  }
+  globalIntervals.clear();
+}
+
+// ============================================================
 // EXPRESS SERVER - Keep Render/Aternos alive
 // ============================================================
 const app = express();
@@ -37,7 +70,7 @@ app.get('/', (req, res) => {
         <style>
           body { 
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            background: #0f172a; 
+            background: linear-gradient(135deg, #050505, #0d0614, #140021, #050505);
             color: #f8fafc; 
             display: flex; 
             justify-content: center; 
@@ -45,18 +78,61 @@ app.get('/', (req, res) => {
             height: 100vh; 
             margin: 0; 
             overflow: hidden;
+            position: relative;
+          }
+          .particles::before,
+          .particles::after {
+            content: "";
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            background-image:
+              radial-gradient(#ff3b3b 1px, transparent 1px),
+              radial-gradient(#ffd700 1px, transparent 1px);
+            background-size: 120px 120px;
+            animation: particlesMove 18s linear infinite;
+            opacity: 0.35;
+            z-index: 0;
+          }
+          .particles::after {
+            animation-duration: 30s;
+            opacity: 0.2;
+            filter: blur(1px);
+          }
+          @keyframes particlesMove {
+            from {
+              transform: translateY(-100px);
+            }
+            to {
+              transform: translateY(100vh);
+            }
           }
           .container {
-            background: #1e293b;
+            background: rgba(20, 10, 40, 0.88);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(168, 85, 247, 0.25);
             padding: 40px;
             border-radius: 20px;
             box-shadow: 0 0 50px rgba(45, 212, 191, 0.2);
             text-align: center;
             width: 400px;
-            border: 1px solid #334155;
             transition: box-shadow 0.3s ease;
+            position: relative;
+            z-index: 1;
           }
-          h1 { margin-bottom: 30px; font-size: 24px; color: #ccfbf1; display: flex; align-items: center; justify-content: center; gap: 10px; }
+          h1 { 
+            margin-bottom: 30px; 
+            font-size: 24px; 
+            color: #4ade80; 
+            text-shadow: 0 0 15px rgba(74, 222, 128, 0.8);
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            gap: 10px; 
+          }
           .stat-card {
             background: #0f172a;
             padding: 15px;
@@ -64,12 +140,20 @@ app.get('/', (req, res) => {
             border-radius: 12px;
             border-left: 5px solid #2dd4bf;
             text-align: left;
-            box-shadow: 5px 5px 15px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 0 10px rgba(168,85,247,0.18), 0 0 20px rgba(255,0,80,0.08);
             position: relative;
             overflow: hidden;
           }
           .label { font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
           .value { font-size: 18px; font-weight: bold; color: #2dd4bf; text-shadow: 0 0 10px rgba(45, 212, 191, 0.5); margin-top: 5px; }
+          .value.coords { 
+            color: #facc15; 
+            text-shadow: 0 0 12px rgba(250, 204, 21, 0.7); 
+          }
+          .value.ip-hidden {
+            color: #94a3b8;
+            text-shadow: none;
+          }
           .status-dot { 
             height: 12px; width: 12px; 
             border-radius: 50%; 
@@ -85,11 +169,23 @@ app.get('/', (req, res) => {
             50% { opacity: 0.5; transform: scale(1.1); }
             100% { opacity: 1; transform: scale(1); }
           }
+          @keyframes gradientMove {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+          }
           .btn-guide {
-            display: inline-block; margin-top: 20px; padding: 12px 24px; 
-            background: #2dd4bf; color: #0f172a; text-decoration: none; 
-            border-radius: 8px; font-weight: bold; 
-            box-shadow: 0 0 15px rgba(45, 212, 191, 0.4);
+            display: inline-block; 
+            margin-top: 20px; 
+            padding: 12px 24px; 
+            background: linear-gradient(90deg, #ffd700, #ffb300, #ffdf6b);
+            background-size: 300% 300%;
+            animation: gradientMove 6s ease infinite;
+            color: #111; 
+            text-decoration: none; 
+            border-radius: 8px; 
+            font-weight: bold; 
+            box-shadow: 0 0 12px rgba(255,215,0,0.5);
             transition: transform 0.2s;
           }
           .btn-guide:hover { transform: translateY(-2px); }
@@ -108,6 +204,7 @@ app.get('/', (req, res) => {
         </style>
       </head>
       <body>
+        <div class="particles"></div>
         <div class="container" id="main-container">
           <h1>
             <span id="live-indicator" class="status-dot pulse" style="color: #ef4444;"></span> 
@@ -126,12 +223,12 @@ app.get('/', (req, res) => {
 
           <div class="stat-card">
             <div class="label">Coordinates</div>
-            <div class="value" id="coords-text">Waiting...</div>
+            <div class="value coords" id="coords-text">Waiting...</div>
           </div>
 
           <div class="stat-card">
             <div class="label">Server</div>
-            <div class="value">${config.server.ip}</div>
+            <div class="value ip-hidden">Protected Server 🔒</div>
           </div>
 
           <a href="/tutorial" class="btn-guide">View Setup Guide</a>
@@ -141,7 +238,7 @@ app.get('/', (req, res) => {
           </div>
           
           <p style="color: #64748b; font-size: 12px; margin-top: 15px;">
-            Minecraft AFK Bot v5.3 — Ultra Stability Edition
+            Minecraft AFK Bot v5.4 — Ultimate Stability Edition
           </p>
         </div>
 
@@ -190,7 +287,7 @@ app.get('/', (req, res) => {
             }
           };
 
-          setInterval(updateStats, 1000);
+          setInterval(updateStats, 10000);
           updateStats();
         </script>
       </body>
@@ -247,7 +344,7 @@ app.get('/tutorial', (req, res) => {
           </ol>
         </div>
         
-        <p style="text-align: center; margin-top: 40px; color: #64748b;">Minecraft AFK Bot v5.3 — Ultra Stability Edition</p>
+        <p style="text-align: center; margin-top: 40px; color: #64748b;">Minecraft AFK Bot v5.4 — Ultimate Stability</p>
       </body>
     </html>
   `);
@@ -285,7 +382,7 @@ const SELF_PING_INTERVAL = 5 * 60 * 1000;
 const https = require('https');
 
 function startSelfPing() {
-  setInterval(() => {
+  safeGlobalInterval(() => {
     const url = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
     const protocol = url.startsWith('https') ? https : http;
 
@@ -301,16 +398,16 @@ function startSelfPing() {
 startSelfPing();
 
 // ============================================================
-// MEMORY MONITORING
+// MEMORY MONITORING - Using heapUsed instead of RSS
 // ============================================================
-setInterval(() => {
-  const used = process.memoryUsage().rss / 1024 / 1024;
+safeGlobalInterval(() => {
+  const heapUsed = process.memoryUsage().heapUsed / 1024 / 1024;
+  const rss = process.memoryUsage().rss / 1024 / 1024;
 
-  console.log(`[Memory] REAL usage: ${used.toFixed(2)} MB`);
+  console.log(`[Memory] Heap: ${heapUsed.toFixed(2)} MB | RSS: ${rss.toFixed(2)} MB`);
 
-  if (used > 430) {
-    console.log('[Memory] Critical memory usage — restarting');
-
+  if (heapUsed > 430) {
+    console.log('[Memory] Critical heap memory usage — restarting');
     process.exit(1);
   }
 }, 300000);
@@ -318,13 +415,13 @@ setInterval(() => {
 // ============================================================
 // AUTO GARBAGE COLLECTION
 // ============================================================
-setInterval(() => {
+safeGlobalInterval(() => {
   if (global.gc) {
-    const before = process.memoryUsage().rss / 1024 / 1024;
+    const before = process.memoryUsage().heapUsed / 1024 / 1024;
 
     global.gc();
 
-    const after = process.memoryUsage().rss / 1024 / 1024;
+    const after = process.memoryUsage().heapUsed / 1024 / 1024;
 
     console.log(
       `[GC] Garbage collected | ${before.toFixed(2)}MB -> ${after.toFixed(2)}MB`
@@ -333,10 +430,11 @@ setInterval(() => {
     console.log('[GC] Garbage collector unavailable');
   }
 }, 1000 * 60 * 10); // every 10 min
+
 // ============================================================
 // HEARTBEAT LOGGER - Keeps Render stream alive for debugging
 // ============================================================
-setInterval(() => {
+safeGlobalInterval(() => {
   console.log(`[Heartbeat] Bot alive | ${new Date().toISOString()}`);
 }, 600000);
 
@@ -396,17 +494,19 @@ class TimeoutRegistry {
 // BOT CREATION WITH RECONNECTION LOGIC
 // ============================================================
 let bot = null;
-let timeoutRegistry = new TimeoutRegistry();
+let botTimeoutRegistry = new TimeoutRegistry();
 let reconnectTimeout = null;
-let isReconnecting = false;
 let watchdogInterval = null;
 let activityScheduled = false;
 let activityManager = null;
+let firstRegistrationDone = false;
 
 function cleanupBot() {
-  if (timeoutRegistry) {
-    timeoutRegistry.clearAll();
-    timeoutRegistry = new TimeoutRegistry();
+  console.log('[Cleanup] Starting bot cleanup...');
+  
+  if (botTimeoutRegistry) {
+    botTimeoutRegistry.clearAll();
+    botTimeoutRegistry = new TimeoutRegistry();
   }
   
   if (reconnectTimeout) {
@@ -421,29 +521,74 @@ function cleanupBot() {
   
   activityScheduled = false;
   activityManager = null;
+  activityLoopRunning = false;
+  
+  // SAFE: Remove packet listener using reference
+  if (packetListener && bot && bot._client) {
+    try {
+      bot._client.off('packet', packetListener);
+    } catch (e) {
+      console.log('[Cleanup] Error removing packet listener:', e.message);
+    }
+  }
+  packetListener = null;
   
   if (bot) {
     try {
+      // Remove all listeners to prevent memory leaks
       bot.removeAllListeners();
+      
+      // Safely destroy socket
+      if (bot._client && bot._client.socket) {
+        try {
+          bot._client.socket.removeAllListeners();
+          if (!bot._client.socket.destroyed) {
+            bot._client.socket.destroy();
+          }
+        } catch (e) {
+          console.log('[Cleanup] Error destroying socket:', e.message);
+        }
+      }
+      
+      // Remove client listeners
+      if (bot._client) {
+        try {
+          bot._client.removeAllListeners();
+        } catch (e) {
+          console.log('[Cleanup] Error removing client listeners:', e.message);
+        }
+      }
+      
       bot.end();
     } catch (e) {
       console.log('[Cleanup] Error ending bot:', e.message);
     }
     bot = null;
   }
+  
+  console.log('[Cleanup] Bot cleanup completed');
 }
 
 function getReconnectDelay() {
   const now = Date.now();
   
+  // Keep reconnect history limited to prevent memory growth
   botState.reconnectHistory = botState.reconnectHistory.filter(time => now - time < 300000);
+  
+  // Limit array size
+  if (botState.reconnectHistory.length > 10) {
+    botState.reconnectHistory = botState.reconnectHistory.slice(-10);
+  }
   
   botState.reconnectHistory.push(now);
   
   if (botState.reconnectHistory.length > 3) {
-    console.log('[Reconnect] Too many reconnects, applying cooldown');
-    const cooldownDelay = 120000 + Math.floor(Math.random() * 180000);
-    return cooldownDelay;
+    const recentReconnects = botState.reconnectHistory.filter(time => now - time < 60000);
+    if (recentReconnects.length > 3) {
+      console.log('[Reconnect] Too many reconnects, applying cooldown');
+      const cooldownDelay = 120000 + Math.floor(Math.random() * 180000);
+      return cooldownDelay;
+    }
   }
   
   const baseDelay = config.utils['auto-reconnect-delay'] || 5000;
@@ -455,11 +600,22 @@ function getReconnectDelay() {
 }
 
 function createBot() {
-  if (isReconnecting) {
-    console.log('[Bot] Already reconnecting, skipping createBot...');
+  // CRITICAL: Check global reconnect lock
+  if (reconnecting) {
+    console.log('[Bot] Global reconnect lock active, skipping createBot...');
     return;
   }
+  
+  // CRITICAL: Check if already joining
+  if (isJoining) {
+    console.log('[Bot] Already joining, skipping createBot...');
+    return;
+  }
+  
+  // CRITICAL: Set lock before any async operations
+  reconnecting = true;
 
+  // Clean up old bot completely
   cleanupBot();
   
   console.log(`[Bot] Creating bot instance...`);
@@ -488,7 +644,7 @@ function createBot() {
         
         socket.setKeepAlive(true, 30000);
         socket.setNoDelay(true);
-        socket.setTimeout(300000);
+        socket.setTimeout(600000); // Increased to 10 minutes
         
         socket.on('timeout', () => {
           console.log('[Socket] Timeout detected, connection may be unstable');
@@ -502,11 +658,18 @@ function createBot() {
         });
       }
       
+      // SAFE: Use dedicated packet listener instead of removeAllListeners
       if (bot._client) {
-        botState.lastPacketTime = Date.now();
-        bot._client.on('packet', () => {
+        // Remove old packet listener safely
+        if (packetListener) {
+          bot._client.off('packet', packetListener);
+        }
+        
+        packetListener = () => {
           botState.lastPacketTime = Date.now();
-        });
+        };
+        
+        bot._client.on('packet', packetListener);
       }
     });
 
@@ -530,25 +693,29 @@ function createBot() {
       console.log('[Bot] Login successful');
     });
 
-    const connectionTimeout = timeoutRegistry.setTimeout(() => {
+    const connectionTimeout = botTimeoutRegistry.setTimeout(() => {
       if (!botState.connected) {
         console.log('[Bot] Connection timeout - no spawn received');
         isJoining = false;
+        reconnecting = false;
         scheduleReconnect();
       }
     }, 120000);
 
     bot.once('spawn', () => {
-      timeoutRegistry.clearTimeout(connectionTimeout);
+      botTimeoutRegistry.clearTimeout(connectionTimeout);
       clearTimeout(connectionTimeout);
       
       botState.connected = true;
       botState.lastActivity = Date.now();
       botState.lastPositionUpdate = Date.now();
       botState.reconnectAttempts = 0;
-      isReconnecting = false;
       isJoining = false;
       activityScheduled = false;
+      activityLoopRunning = false;
+      
+      // CRITICAL: Release reconnect lock only after successful spawn
+      reconnecting = false;
 
       console.log(`[Bot] [+] Successfully spawned on server!`);
       if (config.discord && config.discord.events.connect) {
@@ -580,6 +747,7 @@ function createBot() {
       botState.connected = false;
       isJoining = false;
       
+      // Keep error array limited
       if (botState.errors.length > 20) {
         botState.errors.shift();
       }
@@ -605,24 +773,43 @@ function createBot() {
   } catch (err) {
     console.log(`[Bot] Failed to create bot: ${err.message}`);
     isJoining = false;
+    reconnecting = false;
     scheduleReconnect();
   }
 }
 
 function scheduleReconnect() {
-  if (isReconnecting) {
-    console.log('[Bot] Reconnect already in progress');
+  // CRITICAL: Check all locks before reconnecting
+  if (reconnecting) {
+    console.log('[Reconnect] Global reconnect lock active, skipping...');
+    return;
+  }
+  
+  if (isJoining) {
+    console.log('[Reconnect] Bot is joining, skipping...');
     return;
   }
 
-  isReconnecting = true;
+  reconnecting = true;
   botState.connected = false;
 
+  // Clean up bot if it still exists
   if (bot) {
     try {
       bot.removeAllListeners();
+      if (bot._client && bot._client.socket) {
+        bot._client.socket.removeAllListeners();
+        if (!bot._client.socket.destroyed) {
+          bot._client.socket.destroy();
+        }
+      }
+      if (bot._client) {
+        bot._client.removeAllListeners();
+      }
       bot.end();
-    } catch (e) {}
+    } catch (e) {
+      console.log('[Reconnect] Error during cleanup:', e.message);
+    }
     bot = null;
   }
 
@@ -632,11 +819,12 @@ function scheduleReconnect() {
   }
   
   activityScheduled = false;
+  activityLoopRunning = false;
 
   botState.reconnectAttempts++;
 
   const delay = getReconnectDelay();
-  console.log(`[Bot] Scheduling reconnect in ${delay/1000}s (attempt #${botState.reconnectAttempts})`);
+  console.log(`[Reconnect] Scheduling reconnect in ${delay/1000}s (attempt #${botState.reconnectAttempts})`);
 
   if (reconnectTimeout) {
     clearTimeout(reconnectTimeout);
@@ -644,14 +832,22 @@ function scheduleReconnect() {
 
   reconnectTimeout = setTimeout(() => {
     reconnectTimeout = null;
-    isReconnecting = false;
     
-    if (bot && botState.connected) {
-      console.log('[Bot] Already connected, skipping reconnect');
-      return;
-    }
+    // CRITICAL: Add 10 second safety delay before creating new bot
+    console.log('[Reconnect] Waiting 10s for old socket to fully die...');
     
-    createBot();
+    setTimeout(() => {
+      // SAFE: Check connection state BEFORE releasing lock
+      if (bot && botState.connected) {
+        console.log('[Reconnect] Already connected, skipping reconnect');
+        reconnecting = false;
+        return;
+      }
+      
+      reconnecting = false;
+      createBot();
+    }, 10000); // 10 second safety delay
+    
   }, delay);
 }
 
@@ -660,8 +856,8 @@ function scheduleReconnect() {
 // ============================================================
 const RESTART_INTERVAL = 1000 * 60 * 60 * 3;
 
-setInterval(() => {
-  if (bot && botState.connected && !isReconnecting) {
+safeGlobalInterval(() => {
+  if (bot && botState.connected && !reconnecting && !isJoining) {
     console.log('[Refresh] Scheduled connection refresh for stability');
     bot.end('Scheduled refresh');
   }
@@ -670,18 +866,19 @@ setInterval(() => {
 console.log('[Refresh] Scheduled refresh enabled (every 3 hours)');
 
 // ============================================================
-// GHOST CONNECTION DETECTOR
+// GHOST CONNECTION DETECTOR - Improved with 7 min timeout
 // ============================================================
 function startGhostConnectionDetector() {
-  timeoutRegistry.setInterval(() => {
+  botTimeoutRegistry.setInterval(() => {
     if (!bot || !botState.connected || isJoining) return;
 
     const now = Date.now();
     const packetAge = now - botState.lastPacketTime;
     const chunkAge = now - botState.lastChunkUpdate;
 
-    if (packetAge > 300000) {
-      console.log('[GhostDetector] Ghost connection detected - no packets for 300s');
+    // Changed from 300000 (5 min) to 420000 (7 min)
+    if (packetAge > 420000) {
+      console.log('[GhostDetector] Ghost connection detected - no packets for 420s');
       botState.connected = false;
       try {
         bot.end('Ghost connection');
@@ -690,8 +887,8 @@ function startGhostConnectionDetector() {
       return;
     }
 
-    if (chunkAge > 300000 && packetAge > 60000) {
-      console.log('[GhostDetector] Possible ghost - no chunks loaded for 300s');
+    if (chunkAge > 420000 && packetAge > 60000) {
+      console.log('[GhostDetector] Possible ghost - no chunks loaded for 420s');
     }
   }, 60000);
 }
@@ -700,7 +897,7 @@ function startGhostConnectionDetector() {
 // POSITION SAFETY CHECK
 // ============================================================
 function startPositionSafetyCheck() {
-  timeoutRegistry.setInterval(() => {
+  botTimeoutRegistry.setInterval(() => {
     if (!bot || !bot.entity || !botState.connected) return;
 
     try {
@@ -719,7 +916,7 @@ function startPositionSafetyCheck() {
       if (bot.entity.onGround === false && bot.entity.velocity) {
         const fallingSpeed = Math.abs(bot.entity.velocity.y);
         if (fallingSpeed > 1.0) {
-          timeoutRegistry.setTimeout(() => {
+          botTimeoutRegistry.setTimeout(() => {
             if (bot && bot.entity && bot.entity.onGround === false && bot.entity.velocity && Math.abs(bot.entity.velocity.y) > 1.0) {
               console.log('[PositionCheck] Bot still falling after check, possible freeze');
               botState.connected = false;
@@ -738,7 +935,7 @@ function startPositionSafetyCheck() {
 }
 
 // ============================================================
-// WATCHDOG SYSTEM
+// WATCHDOG SYSTEM - Improved with packet timeout
 // ============================================================
 function startWatchdog() {
   if (watchdogInterval) {
@@ -747,14 +944,37 @@ function startWatchdog() {
   
   watchdogInterval = setInterval(() => {
     try {
-      if (isJoining || isReconnecting) return;
+      if (isJoining || reconnecting) return;
       if (!botState.connected) return;
+
+      // ADDED: Packet timeout check
+      const packetAge = Date.now() - botState.lastPacketTime;
+      if (packetAge > 420000) {
+        console.log('[Watchdog] No packets received for 7 minutes');
+        botState.connected = false;
+        
+        try {
+          bot.end('Watchdog packet timeout');
+        } catch (e) {}
+        
+        scheduleReconnect();
+        return;
+      }
 
       if (!bot || !bot._client || bot._client.ended) {
         console.log('[Watchdog] Dead bot detected, initiating reconnect...');
         
         if (bot) {
           bot.removeAllListeners();
+          if (bot._client && bot._client.socket) {
+            bot._client.socket.removeAllListeners();
+            if (!bot._client.socket.destroyed) {
+              bot._client.socket.destroy();
+            }
+          }
+          if (bot._client) {
+            bot._client.removeAllListeners();
+          }
           try { bot.end(); } catch (e) {}
         }
         
@@ -771,8 +991,8 @@ function startWatchdog() {
 }
 
 // ============================================================
-// CENTRAL ACTIVITY MANAGER — ULTRA LIGHTWEIGHT (v5.3)
-// Single anti-AFK engine. 60% idle. 40-120s delays.
+// CENTRAL ACTIVITY MANAGER — ULTRA LIGHTWEIGHT (v5.4)
+// Single anti-AFK engine. 50% idle. 40-120s delays.
 // ============================================================
 class ActivityManager {
   constructor() {
@@ -780,18 +1000,27 @@ class ActivityManager {
   }
 
   scheduleNext() {
-    if (!bot || !botState.connected) return;
+    // SAFE: Prevent duplicate activity chains
+    if (activityLoopRunning) return;
+    activityLoopRunning = true;
     
-    // 60% chance: complete idle (maximum stability)
+    if (!bot || !botState.connected) {
+      activityLoopRunning = false;
+      return;
+    }
+    
+    // 50% chance: complete idle (maximum stability)
     if (Math.random() < 0.50) {
       const idleDelay = 40000 + Math.floor(Math.random() * 80000);
-      timeoutRegistry.setTimeout(() => this.scheduleNext(), idleDelay);
+      activityLoopRunning = false;
+      botTimeoutRegistry.setTimeout(() => this.scheduleNext(), idleDelay);
       return;
     }
     
     // Prevent activity engine from silently dying
     if (this.isActive) {
-      timeoutRegistry.setTimeout(() => this.scheduleNext(), 3000);
+      activityLoopRunning = false;
+      botTimeoutRegistry.setTimeout(() => this.scheduleNext(), 3000);
       return;
     }
     
@@ -819,7 +1048,8 @@ class ActivityManager {
       actionDelay = 40000 + Math.floor(Math.random() * 80000);
     }
     
-    timeoutRegistry.setTimeout(() => this.scheduleNext(), actionDelay);
+    activityLoopRunning = false;
+    botTimeoutRegistry.setTimeout(() => this.scheduleNext(), actionDelay);
   }
 
   performLook() {
@@ -854,7 +1084,7 @@ class ActivityManager {
     
     try {
       bot.setControlState('jump', true);
-      timeoutRegistry.setTimeout(() => {
+      botTimeoutRegistry.setTimeout(() => {
         if (bot) bot.setControlState('jump', false);
         this.isActive = false;
       }, 200);
@@ -889,7 +1119,7 @@ class ActivityManager {
       if (Math.random() < 0.10) {
         bot.setControlState('jump', true);
         
-        timeoutRegistry.setTimeout(() => {
+        botTimeoutRegistry.setTimeout(() => {
           if (bot) bot.setControlState('jump', false);
         }, 150);
       }
@@ -899,7 +1129,7 @@ class ActivityManager {
         bot.setControlState('sprint', true);
       }
       
-      timeoutRegistry.setTimeout(() => {
+      botTimeoutRegistry.setTimeout(() => {
         if (!bot || !bot.entity) return;
         
         bot.setControlState(dir, false);
@@ -924,14 +1154,18 @@ class ActivityManager {
 function initializeModules(bot) {
   console.log('[Modules] Initializing modules...');
 
-  // ---------- AUTO AUTH ----------
+  // ---------- AUTO AUTH (Improved - Only login after first registration) ----------
   if (config.utils['auto-auth'].enabled) {
     const password = config.utils['auto-auth'].password;
-    timeoutRegistry.setTimeout(() => {
+    botTimeoutRegistry.setTimeout(() => {
       if (bot && botState.connected) {
-        bot.chat(`/register ${password} ${password}`);
+        if (!firstRegistrationDone) {
+          bot.chat(`/register ${password} ${password}`);
+          firstRegistrationDone = true;
+          console.log('[Auth] Sent registration commands');
+        }
         bot.chat(`/login ${password}`);
-        console.log('[Auth] Sent login commands');
+        console.log('[Auth] Sent login command');
       }
     }, 1000 + Math.floor(Math.random() * 500));
   }
@@ -953,13 +1187,13 @@ function initializeModules(bot) {
         botState.lastActivity = Date.now();
         i = (i + 1) % messages.length;
         
-        timeoutRegistry.setTimeout(
+        botTimeoutRegistry.setTimeout(
           sendRandomChat,
           baseChatDelay + Math.floor(Math.random() * 30000)
         );
       };
       
-      timeoutRegistry.setTimeout(
+      botTimeoutRegistry.setTimeout(
         sendRandomChat,
         baseChatDelay + Math.floor(Math.random() * 15000)
       );
@@ -967,6 +1201,7 @@ function initializeModules(bot) {
   }
 
   // ---------- CENTRAL ACTIVITY MANAGER (ONLY anti-AFK system) ----------
+  activityLoopRunning = false;
   activityManager = new ActivityManager();
   activityManager.scheduleNext();
 
@@ -998,7 +1233,10 @@ rl.on('line', (line) => {
     console.log(`Connected: ${botState.connected}`);
     console.log(`Uptime: ${formatUptime(Math.floor((Date.now() - botState.startTime) / 1000))}`);
     console.log(`Last packet: ${((Date.now() - botState.lastPacketTime) / 1000).toFixed(1)}s ago`);
-    console.log(`Active timers: ${timeoutRegistry.getActiveCount()}`);
+    console.log(`Active timers: ${botTimeoutRegistry.getActiveCount()}`);
+    console.log(`Reconnecting: ${reconnecting}`);
+    console.log(`Is Joining: ${isJoining}`);
+    console.log(`Activity Loop: ${activityLoopRunning}`);
   } else if (trimmed === 'reconnect') {
     console.log('[Console] Manual reconnect requested');
     bot.end('Manual reconnect');
@@ -1025,7 +1263,7 @@ function sendDiscordWebhook(content, color = 0x0099ff) {
       description: content,
       color: color,
       timestamp: new Date().toISOString(),
-      footer: { text: 'Minecraft AFK Bot v5.3 — Ultra Stability' }
+      footer: { text: 'Minecraft AFK Bot v5.4 — Ultimate Stability' }
     }]
   });
 
@@ -1062,6 +1300,8 @@ process.on('uncaughtException', (err) => {
 
   if (config.utils['auto-reconnect']) {
     isJoining = false;
+    reconnecting = false;
+    activityLoopRunning = false;
     cleanupBot();
     setTimeout(() => {
       scheduleReconnect();
@@ -1082,6 +1322,7 @@ process.on('SIGTERM', () => {
   console.log('[System] SIGTERM received — cleaning up and exiting');
   
   try {
+    clearGlobalIntervals();
     cleanupBot();
   } catch (e) {
     console.log('[SIGTERM] Cleanup error:', e.message);
@@ -1092,6 +1333,7 @@ process.on('SIGTERM', () => {
 
 process.on('SIGINT', () => {
   console.log('[System] Manual stop requested. Exiting...');
+  clearGlobalIntervals();
   cleanupBot();
   process.exit(0);
 });
@@ -1100,12 +1342,13 @@ process.on('SIGINT', () => {
 // START THE BOT
 // ============================================================
 console.log('='.repeat(50));
-console.log('  Minecraft AFK Bot v5.3 — Ultra Stability Edition');
+console.log('  Minecraft AFK Bot v1.1 — Ultimate Stability Edition');
 console.log('='.repeat(50));
 console.log(`Server: ${config.server.ip}:${config.server.port}`);
 console.log(`Version: ${config.server.version}`);
 console.log(`Auto-Reconnect: ${config.utils['auto-reconnect'] ? 'Enabled' : 'Disabled'}`);
 console.log('Features: Ghost Detection | Single Activity Engine | Position Safety | 3h Refresh');
+console.log('Fixes: Safe Packet Listener | Global Interval Tracking | Race Condition Patched');
 console.log('='.repeat(50));
 
 createBot();
