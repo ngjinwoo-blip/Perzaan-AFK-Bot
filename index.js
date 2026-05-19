@@ -141,7 +141,7 @@ app.get('/', (req, res) => {
           </div>
           
           <p style="color: #64748b; font-size: 12px; margin-top: 15px;">
-            Minecraft AFK Bot v5.3 â€” Ultra Stability Edition
+            Minecraft AFK Bot v5.3 — Ultra Stability Edition
           </p>
         </div>
 
@@ -247,7 +247,7 @@ app.get('/tutorial', (req, res) => {
           </ol>
         </div>
         
-        <p style="text-align: center; margin-top: 40px; color: #64748b;">Minecraft AFK Bot v5.3 â€” Ultra Stability Edition</p>
+        <p style="text-align: center; margin-top: 40px; color: #64748b;">Minecraft AFK Bot v5.3 — Ultra Stability Edition</p>
       </body>
     </html>
   `);
@@ -309,7 +309,7 @@ setInterval(() => {
   console.log(`[Memory] REAL usage: ${used.toFixed(2)} MB`);
 
   if (used > 430) {
-    console.log('[Memory] Critical memory usage â€” restarting');
+    console.log('[Memory] Critical memory usage — restarting');
 
     process.exit(1);
   }
@@ -658,7 +658,7 @@ function scheduleReconnect() {
 // ============================================================
 // PERIODIC CLEAN REFRESH - Prevents stale sockets & ghost states
 // ============================================================
-const RESTART_INTERVAL = 1000 * 60 * 60 * 3;
+const RESTART_INTERVAL = 1000 * 60 * 60 * 4;
 
 setInterval(() => {
   if (bot && botState.connected && !isReconnecting) {
@@ -771,7 +771,7 @@ function startWatchdog() {
 }
 
 // ============================================================
-// CENTRAL ACTIVITY MANAGER â€” ULTRA LIGHTWEIGHT (v5.3)
+// CENTRAL ACTIVITY MANAGER — ULTRA LIGHTWEIGHT (v5.3)
 // Single anti-AFK engine. 60% idle. 40-120s delays.
 // ============================================================
 class ActivityManager {
@@ -783,7 +783,7 @@ class ActivityManager {
     if (!bot || !botState.connected) return;
     
     // 60% chance: complete idle (maximum stability)
-    if (Math.random() < 0.50) {
+    if (Math.random() < 0.60) {
       const idleDelay = 40000 + Math.floor(Math.random() * 80000);
       timeoutRegistry.setTimeout(() => this.scheduleNext(), idleDelay);
       return;
@@ -798,19 +798,19 @@ class ActivityManager {
     const rand = Math.random();
     let actionDelay;
     
-    if (rand < 0.15) {
-      // 15%: tiny look movement
+    if (rand < 0.10) {
+      // 10%: tiny look movement
       this.performLook();
       actionDelay = 40000 + Math.floor(Math.random() * 80000);
-    } else if (rand < 0.22) {
-      // 7%: arm swing
+    } else if (rand < 0.13) {
+      // 3%: arm swing
       this.performArmSwing();
       actionDelay = 50000 + Math.floor(Math.random() * 70000);
-    } else if (rand < 0.27) {
-      // 5%: jump
+    } else if (rand < 0.15) {
+      // 2%: jump
       this.performJump();
       actionDelay = 60000 + Math.floor(Math.random() * 60000);
-    } else if (rand < 0.50) {
+    } else if (rand < 0.30) {
       // Spectator realistic movement
       this.performSpectatorMove();
       actionDelay = 45000 + Math.floor(Math.random() * 45000);
@@ -919,7 +919,7 @@ class ActivityManager {
 }
 
 // ============================================================
-// MODULE INITIALIZATION â€” Single activity system only
+// MODULE INITIALIZATION — Single activity system only
 // ============================================================
 function initializeModules(bot) {
   console.log('[Modules] Initializing modules...');
@@ -970,7 +970,7 @@ function initializeModules(bot) {
   activityManager = new ActivityManager();
   activityManager.scheduleNext();
 
-  console.log('[Modules] Initialized â€” single activity engine active');
+  console.log('[Modules] Initialized — single activity engine active');
 }
 
 // ============================================================
@@ -1025,7 +1025,7 @@ function sendDiscordWebhook(content, color = 0x0099ff) {
       description: content,
       color: color,
       timestamp: new Date().toISOString(),
-      footer: { text: 'Minecraft AFK Bot v5.3 â€” Ultra Stability' }
+      footer: { text: 'Minecraft AFK Bot v5.3 — Ultra Stability' }
     }]
   });
 
@@ -1077,9 +1077,9 @@ process.on('unhandledRejection', (reason) => {
   botState.errors.push({ type: 'rejection', message: String(reason), time: Date.now() });
 });
 
-// Render-safe SIGTERM handler â€” let Render restart the container
+// Render-safe SIGTERM handler — let Render restart the container
 process.on('SIGTERM', () => {
-  console.log('[System] SIGTERM received â€” cleaning up and exiting');
+  console.log('[System] SIGTERM received — cleaning up and exiting');
   
   try {
     cleanupBot();
@@ -1100,7 +1100,7 @@ process.on('SIGINT', () => {
 // START THE BOT
 // ============================================================
 console.log('='.repeat(50));
-console.log('  Minecraft AFK Bot v5.3 â€” Ultra Stability Edition');
+console.log('  Minecraft AFK Bot v5.3 — Ultra Stability Edition');
 console.log('='.repeat(50));
 console.log(`Server: ${config.server.ip}:${config.server.port}`);
 console.log(`Version: ${config.server.version}`);
